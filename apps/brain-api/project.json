@@ -1,0 +1,45 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "brain-api",
+  "projectType": "application",
+  "sourceRoot": "apps/brain-api/src",
+  "tags": [
+    "scope:api",
+    "type:app"
+  ],
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsx apps/brain-api/src/main.ts"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": [
+        "{workspaceRoot}/dist/apps/brain-api"
+      ],
+      "options": {
+        "command": "tsc -p apps/brain-api/tsconfig.app.json"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint apps/brain-api/src/main.ts apps/brain-api/src/app apps/brain-api/src/common/config apps/brain-api/src/common/contracts apps/brain-api/src/common/errors apps/brain-api/src/common/filters apps/brain-api/src/common/security apps/brain-api/src/modules --max-warnings=0"
+      }
+    },
+    "type-check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p apps/brain-api/tsconfig.app.json --noEmit"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/dev-placeholder.mjs"
+      }
+    }
+  }
+}

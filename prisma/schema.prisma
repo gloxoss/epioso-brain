@@ -1,0 +1,679 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  ACTIVE
+  LIVE
+  ARCHIVED
+  NEEDS_REVIEW
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ProjectScanType {
+  WORKSPACE
+  PROJECT
+  GIT
+  MANIFEST
+  DOCS
+}
+
+enum ScanStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  BLOCKED
+}
+
+enum ProjectDocumentKind {
+  AGENTS
+  README
+  PLAN
+  SPEC
+  RUNBOOK
+  BRAND_GUIDE
+  API_DOC
+  OTHER
+}
+
+enum AgentSource {
+  CODEX
+  CLAUDE
+  ANTIGRAVITY
+  HERMES
+  MANUAL
+}
+
+enum AgentSessionStatus {
+  PROPOSED
+  REVIEWED
+  APPROVED
+  REJECTED
+  FOLLOW_UP
+}
+
+enum TargetAgent {
+  CODEX
+  CLAUDE
+  HERMES
+  MANUAL
+}
+
+enum TaskStatus {
+  DRAFT
+  QUEUED
+  RUNNING
+  OUTPUT_STAGED
+  APPROVED
+  REJECTED
+  BLOCKED
+}
+
+enum TaskPriority {
+  P0
+  P1
+  P2
+  P3
+}
+
+enum ArtifactKind {
+  NOTE
+  PATCH
+  REPORT
+  LOG
+  IMAGE
+  VIDEO
+  DOCUMENT
+  ASSET
+}
+
+enum AdapterKind {
+  LOCAL_SERVICE
+  CLOUD_BRIDGE
+  AUTOMATION
+  REPOSITORY
+  AI_PROVIDER
+  CONTENT_SYSTEM
+}
+
+enum AdapterStatus {
+  DISABLED
+  READY
+  DEGRADED
+  ERROR
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum ApprovalSubject {
+  TASK
+  ADAPTER_ACTION
+  ARTIFACT
+  COMMAND
+}
+
+enum AuditActor {
+  USER
+  SYSTEM
+  ADAPTER
+  AGENT
+}
+
+enum AuditAction {
+  SCAN
+  READ
+  QUEUE
+  APPROVE
+  REJECT
+  RUN_COMMAND
+  HEALTH_CHECK
+  SEED
+  CREATE
+  UPDATE
+  IMPORT
+}
+
+enum ActionRiskLevel {
+  READ
+  WRITE
+  DESTRUCTIVE
+  EXTERNAL
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILED
+  BLOCKED
+  SKIPPED
+}
+
+model Project {
+  id          String        @id @default(uuid()) @db.Uuid
+  slug        String        @unique
+  name        String
+  path        String        @unique
+  stack       Json          @default("{}")
+  status      ProjectStatus @default(ACTIVE)
+  ownerSkill  String?       @map("owner_skill")
+  riskLevel   RiskLevel     @default(LOW) @map("risk_level")
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  scans         ProjectScan[]
+  gitStatuses   GitStatus[]
+  documents     ProjectDocument[]
+  agentSessions AgentSession[]
+  tasks         Task[]
+  artifacts     Artifact[]
+  auditEvents   AuditEvent[]
+  goals         Goal[]
+  roiEntries    ROIEntry[]
+
+  @@index([status])
+  @@index([riskLevel])
+  @@map("projects")
+}
+
+model ProjectScan {
+  id          String          @id @default(uuid()) @db.Uuid
+  projectId   String?         @map("project_id") @db.Uuid
+  scanType    ProjectScanType @default(PROJECT) @map("scan_type")
+  status      ScanStatus      @default(PENDING)
+  summary     String?
+  metadata    Json            @default("{}")
+  startedAt   DateTime?       @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime?       @map("completed_at") @db.Timestamptz(6)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([scanType, status])
+  @@index([createdAt])
+  @@map("project_scans")
+}
+
+model GitStatus {
+  id         String   @id @default(uuid()) @db.Uuid
+  projectId  String   @map("project_id") @db.Uuid
+  branch     String?
+  remoteUrl  String?  @map("remote_url")
+  isGitRepo  Boolean  @default(false) @map("is_git_repo")
+  hasRemote  Boolean  @default(false) @map("has_remote")
+  dirty      Boolean  @default(false)
+  ahead      Int      @default(0)
+  behind     Int      @default(0)
+  lastCommit String?  @map("last_commit") @db.VarChar(64)
+  scannedAt  DateTime @default(now()) @map("scanned_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, scannedAt])
+  @@index([dirty])
+  @@map("git_status")
+}
+
+model ProjectDocument {
+  id            String              @id @default(uuid()) @db.Uuid
+  projectId     String              @map("project_id") @db.Uuid
+  kind          ProjectDocumentKind @default(OTHER)
+  title         String
+  path          String
+  checksum      String?
+  summary       String?
+  metadata      Json                @default("{}")
+  discoveredAt  DateTime            @default(now()) @map("discovered_at") @db.Timestamptz(6)
+  lastIndexedAt DateTime?           @map("last_indexed_at") @db.Timestamptz(6)
+  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, path])
+  @@index([projectId, kind])
+  @@map("project_documents")
+}
+
+model AgentSession {
+  id         String             @id @default(uuid()) @db.Uuid
+  projectId  String?            @map("project_id") @db.Uuid
+  source     AgentSource
+  title      String
+  summary    String?
+  sourcePath String?            @map("source_path")
+  status     AgentSessionStatus @default(PROPOSED)
+  reviewedAt DateTime?          @map("reviewed_at") @db.Timestamptz(6)
+  createdAt  DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  artifacts Artifact[]
+
+  @@index([projectId, createdAt])
+  @@index([source, status])
+  @@map("agent_sessions")
+}
+
+model Task {
+  id          String       @id @default(uuid()) @db.Uuid
+  projectId   String       @map("project_id") @db.Uuid
+  goalId      String?      @map("goal_id") @db.Uuid
+  title       String
+  objective   String
+  targetAgent TargetAgent  @default(CODEX) @map("target_agent")
+  status      TaskStatus   @default(DRAFT)
+  priority    TaskPriority @default(P2)
+  riskLevel   RiskLevel    @default(MEDIUM) @map("risk_level")
+  metadata    Json         @default("{}")
+  queuedAt    DateTime?    @map("queued_at") @db.Timestamptz(6)
+  startedAt   DateTime?    @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime?    @map("completed_at") @db.Timestamptz(6)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  goal        Goal?        @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  artifacts   Artifact[]
+  approvals   Approval[]
+  auditEvents AuditEvent[]
+
+  @@index([projectId, status])
+  @@index([priority, status])
+  @@index([createdAt])
+  @@index([goalId])
+  @@map("tasks")
+}
+
+model Artifact {
+  id             String       @id @default(uuid()) @db.Uuid
+  projectId      String?      @map("project_id") @db.Uuid
+  taskId         String?      @map("task_id") @db.Uuid
+  agentSessionId String?      @map("agent_session_id") @db.Uuid
+  kind           ArtifactKind @default(DOCUMENT)
+  title          String
+  uri            String
+  contentType    String?      @map("content_type")
+  summary        String?
+  metadata       Json         @default("{}")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project      Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task         Task?         @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  agentSession AgentSession? @relation(fields: [agentSessionId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([taskId])
+  @@index([agentSessionId])
+  @@map("artifacts")
+}
+
+model Adapter {
+  id           String        @id @default(uuid()) @db.Uuid
+  key          String        @unique
+  name         String
+  kind         AdapterKind
+  status       AdapterStatus @default(DISABLED)
+  baseUrl      String?       @map("base_url")
+  capabilities Json          @default("[]")
+  metadata     Json          @default("{}")
+  checkedAt    DateTime?     @map("checked_at") @db.Timestamptz(6)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  approvals   Approval[]
+  auditEvents AuditEvent[]
+
+  @@index([kind, status])
+  @@map("adapters")
+}
+
+model Approval {
+  id          String          @id @default(uuid()) @db.Uuid
+  subject     ApprovalSubject
+  adapterId   String?         @map("adapter_id") @db.Uuid
+  taskId      String?         @map("task_id") @db.Uuid
+  requestedBy AuditActor      @default(SYSTEM) @map("requested_by")
+  status      ApprovalStatus  @default(PENDING)
+  riskLevel   ActionRiskLevel @default(WRITE) @map("risk_level")
+  reason      String
+  metadata    Json            @default("{}")
+  requestedAt DateTime        @default(now()) @map("requested_at") @db.Timestamptz(6)
+  decidedAt   DateTime?       @map("decided_at") @db.Timestamptz(6)
+  decidedBy   AuditActor?     @map("decided_by")
+  expiresAt   DateTime?       @map("expires_at") @db.Timestamptz(6)
+
+  adapter Adapter? @relation(fields: [adapterId], references: [id], onDelete: SetNull)
+  task    Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([status, requestedAt])
+  @@index([adapterId])
+  @@index([taskId])
+  @@map("approvals")
+}
+
+model AuditEvent {
+  id        String          @id @default(uuid()) @db.Uuid
+  actor     AuditActor      @default(SYSTEM)
+  adapterId String?         @map("adapter_id") @db.Uuid
+  taskId    String?         @map("task_id") @db.Uuid
+  projectId String?         @map("project_id") @db.Uuid
+  action    AuditAction
+  riskLevel ActionRiskLevel @default(READ) @map("risk_level")
+  result    AuditResult
+  metadata  Json            @default("{}")
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  adapter Adapter? @relation(fields: [adapterId], references: [id], onDelete: SetNull)
+  task    Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([action, result])
+  @@index([adapterId])
+  @@index([taskId])
+  @@index([projectId])
+  @@map("audit_events")
+}
+
+enum GoalStatus {
+  IN_PROGRESS
+  ACHIEVED
+  ABANDONED
+}
+
+enum AuditCategory {
+  CONTEXT
+  CONNECTION
+  CAPABILITY
+  CADENCE
+}
+
+enum FindingStatus {
+  OPEN
+  RESOLVED
+}
+
+enum WorkflowStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+}
+
+enum CandidateStatus {
+  IDENTIFIED
+  SCRIPTABLE
+  WORKFLOW
+  AGENTIC
+  DISCARDED
+}
+
+enum ConnectorType {
+  GOOGLE
+  GITHUB
+  OBSIDIAN
+  SLACK
+  CUSTOM
+}
+
+enum ConnectorStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+enum POCStatus {
+  ACTIVE
+  PROMOTED
+  DISCARDED
+}
+
+model WikiPage {
+  id           String             @id @default(uuid()) @db.Uuid
+  title        String
+  slug         String             @unique
+  content      String
+  path         String             @unique
+  lastModified DateTime           @map("last_modified") @db.Timestamptz(6)
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  linksFrom    WikiLink[]         @relation("WikiLinkSource")
+  linksTo      WikiLink[]         @relation("WikiLinkTarget")
+  findings     WikiLintFinding[]
+
+  @@map("wiki_pages")
+}
+
+model WikiLink {
+  id           String   @id @default(uuid()) @db.Uuid
+  sourcePageId String   @map("source_page_id") @db.Uuid
+  targetPageId String   @map("target_page_id") @db.Uuid
+
+  sourcePage   WikiPage @relation("WikiLinkSource", fields: [sourcePageId], references: [id], onDelete: Cascade)
+  targetPage   WikiPage @relation("WikiLinkTarget", fields: [targetPageId], references: [id], onDelete: Cascade)
+
+  @@unique([sourcePageId, targetPageId])
+  @@map("wiki_links")
+}
+
+model WikiLintFinding {
+  id        String   @id @default(uuid()) @db.Uuid
+  pageId    String   @map("page_id") @db.Uuid
+  ruleId    String   @map("rule_id")
+  severity  String
+  message   String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  page      WikiPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@map("wiki_lint_findings")
+}
+
+model HotCacheEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     Json     @default("{}")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("hot_cache_entries")
+}
+
+model Goal {
+  id          String     @id @default(uuid()) @db.Uuid
+  projectId   String?    @map("project_id") @db.Uuid
+  title       String
+  description String?
+  status      GoalStatus @default(IN_PROGRESS)
+  targetDate  DateTime?  @map("target_date") @db.Timestamptz(6)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project     Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  tasks       Task[]
+
+  @@map("goals")
+}
+
+model OperatingBucket {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  key         String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  audits      FourCAudit[]
+  findings    FourCAuditFinding[]
+
+  @@map("operating_buckets")
+}
+
+model FourCAudit {
+  id              String          @id @default(uuid()) @db.Uuid
+  bucketId        String          @map("bucket_id") @db.Uuid
+  contextScore    Int             @map("context_score")
+  connectionScore Int             @map("connection_score")
+  capabilityScore Int             @map("capability_score")
+  cadenceScore    Int             @map("cadence_score")
+  overallScore    Int             @map("overall_score")
+  summary         String?
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  bucket          OperatingBucket @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+  findings        FourCAuditFinding[]
+
+  @@map("four_c_audits")
+}
+
+model FourCAuditFinding {
+  id          String        @id @default(uuid()) @db.Uuid
+  auditId     String?       @map("audit_id") @db.Uuid
+  bucketId    String        @map("bucket_id") @db.Uuid
+  category    AuditCategory
+  title       String
+  description String
+  status      FindingStatus @default(OPEN)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  audit       FourCAudit?   @relation(fields: [auditId], references: [id], onDelete: SetNull)
+  bucket      OperatingBucket @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+
+  @@map("four_c_audit_findings")
+}
+
+model DailyReview {
+  id                String   @id @default(uuid()) @db.Uuid
+  date              DateTime @unique @db.Date
+  morningNotes      String?  @map("morning_notes")
+  eveningNotes      String?  @map("evening_notes")
+  aiHoursSaved      Float    @default(0.0) @map("ai_hours_saved")
+  userCorrections   String?  @map("user_corrections")
+  manualPastes      String?  @map("manual_pastes")
+  repeatedTasksJson Json     @default("[]") @map("repeated_tasks_json")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("daily_reviews")
+}
+
+model WeeklyAudit {
+  id                String   @id @default(uuid()) @db.Uuid
+  date              DateTime @unique @db.Date
+  summary           String
+  contextScore      Int      @map("context_score")
+  connectionScore   Int      @map("connection_score")
+  capabilityScore   Int      @map("capability_score")
+  cadenceScore      Int      @map("cadence_score")
+  repeatedTasksJson Json     @default("[]") @map("repeated_tasks_json")
+  learningsJson     Json     @default("[]") @map("learnings_json")
+  actionItemsJson   Json     @default("[]") @map("action_items_json")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("weekly_audits")
+}
+
+model Workflow {
+  id          String         @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  status      WorkflowStatus @default(DRAFT)
+  definition  Json           @default("{}")
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("workflows")
+}
+
+model AutomationCandidate {
+  id             String          @id @default(uuid()) @db.Uuid
+  title          String
+  description    String
+  complexity     String
+  status         CandidateStatus @default(IDENTIFIED)
+  sourceReviewId String?         @map("source_review_id") @db.Uuid
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("automation_candidates")
+}
+
+model SOP {
+  id        String   @id @default(uuid()) @db.Uuid
+  title     String
+  content   String
+  version   String   @default("1.0.0")
+  status    String   @default("DRAFT")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("sops")
+}
+
+model Connector {
+  id           String          @id @default(uuid()) @db.Uuid
+  name         String
+  key          String          @unique
+  type         ConnectorType
+  status       ConnectorStatus @default(DISCONNECTED)
+  config       Json            @default("{}")
+  syncStatus   String?         @map("sync_status")
+  lastSyncedAt DateTime?       @map("last_synced_at") @db.Timestamptz(6)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("connectors")
+}
+
+model ROIEntry {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String?  @map("project_id") @db.Uuid
+  date        DateTime @db.Date
+  hoursSaved  Float    @default(0.0) @map("hours_saved")
+  costSaved   Float    @default(0.0) @map("cost_saved")
+  apiCost     Float    @default(0.0) @map("api_cost")
+  valueSaved  Float    @default(0.0) @map("value_saved")
+  netRoi      Float    @default(0.0) @map("net_roi")
+  category    String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@map("roi_entries")
+}
+
+model ProofOfConceptArtifact {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  status      POCStatus @default(ACTIVE)
+  dataSources Json      @default("[]") @map("data_sources")
+  usageCount  Int       @default(0) @map("usage_count")
+  promDecType String?   @map("prom_dec_type")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("proof_of_concept_artifacts")
+}

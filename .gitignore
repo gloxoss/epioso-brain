@@ -1,0 +1,69 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs
+logs/
+runtime-logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Tool caches
+.nx/
+.cache/
+.turbo/
+.vite/
+.eslintcache
+agy-results/
+cache/
+
+# Generated scans and reports
+scans/
+scan-results/
+reports/generated/
+generated/
+
+# Local database and service volumes
+local-data/
+data/
+volumes/
+docker/volumes/
+*.sqlite
+*.sqlite3
+*.db
+
+# Object storage and uploaded outputs
+local-object-storage/
+object-storage/
+storage/
+uploads/
+artifacts/
+
+# Generated assets
+generated-assets/
+assets/generated/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
